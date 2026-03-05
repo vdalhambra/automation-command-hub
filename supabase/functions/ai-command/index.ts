@@ -31,6 +31,39 @@ serve(async (req) => {
 
     let contextBlock = "No user context available.";
     if (user) {
+      // Fetch calendar events if connected
+      let calendarEvents: any[] = [];
+      const { data: calConn } = await supabase
+        .from("api_connections")
+        .select("access_token, token_expires_at, refresh_token")
+        .eq("user_id", user.id)
+        .eq("service", "Google Calendar")
+        .eq("status", "connected")
+        .single();
+
+      if (calConn?.access_token) {
+        try {
+          const now = new Date();
+          const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+          const calParams = new URLSearchParams({
+            timeMin: now.toISOString(), timeMax: timeMax.toISOString(),
+            singleEvents: "true", orderBy: "startTime", maxResults: "20",
+          });
+          const calRes = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?${calParams}`,
+            { headers: { Authorization: `Bearer ${calConn.access_token}` } }
+          );
+          if (calRes.ok) {
+            const calData = await calRes.json();
+            calendarEvents = (calData.items || []).map((e: any) => ({
+              title: e.summary || "(No title)",
+              start: e.start?.dateTime || e.start?.date || "",
+              location: e.location || "",
+            }));
+          }
+        } catch { /* ignore calendar errors in AI context */ }
+      }
+
       const [clientsRes, automationsRes, connectionsRes] = await Promise.all([
         supabase.from("clients").select("name, industry").eq("user_id", user.id),
         supabase.from("automations").select("name, status, client_name").eq("user_id", user.id),
@@ -42,10 +75,14 @@ serve(async (req) => {
       const connections = connectionsRes.data ?? [];
       const activeAutomations = automations.filter((a) => a.status === "active");
 
+      const calendarBlock = calendarEvents.length > 0
+        ? `\n- Upcoming Calendar Events (next 7 days):\n${calendarEvents.map((e) => `  • ${e.start}: ${e.title}${e.location ? ` (${e.location})` : ""}`).join("\n")}`
+        : "\n- Calendar: No upcoming events (or not connected)";
+
       contextBlock = `User's current data:
 - Clients (${clients.length}): ${clients.map((c) => `${c.name} (${c.industry})`).join(", ") || "none"}
 - Automations (${automations.length} total, ${activeAutomations.length} active): ${automations.map((a) => `${a.name} [${a.status}] for ${a.client_name}`).join(", ") || "none"}
-- API Connections (${connections.length}): ${connections.map((c) => `${c.service} [${c.status}]`).join(", ") || "none"}`;
+- API Connections (${connections.length}): ${connections.map((c) => `${c.service} [${c.status}]`).join(", ") || "none"}${calendarBlock}`;
     }
 
     const systemPrompt = `You are an AI operations assistant for a business automation platform. You help the user manage their clients, automations, and API connections. You have access to the user's current data context below. You can describe actions to take but cannot execute them directly yet. Be concise, helpful, and specific. Use markdown formatting for clarity.
