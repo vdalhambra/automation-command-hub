@@ -11,12 +11,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { clients as initialClients, Client } from "@/lib/mock-data";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useClients, useCreateClient, useUpdateClient, useDeleteClient, Client } from "@/hooks/useClients";
 import { motion } from "framer-motion";
-import { toast } from "sonner";
 
 export default function Clients() {
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  const { data: clients = [], isLoading } = useClients();
+  const createClient = useCreateClient();
+  const updateClient = useUpdateClient();
+  const deleteClient = useDeleteClient();
+
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -28,16 +32,11 @@ export default function Clients() {
   );
 
   const handleSave = () => {
-    if (!form.name.trim()) { toast.error("Name is required"); return; }
+    if (!form.name.trim()) return;
     if (editing) {
-      setClients((prev) => prev.map((c) => c.id === editing.id ? { ...c, ...form } : c));
-      toast.success("Client updated");
+      updateClient.mutate({ id: editing.id, ...form });
     } else {
-      const newClient: Client = {
-        id: Date.now().toString(), ...form, connectedApis: 0, automations: 0, createdAt: new Date().toISOString().split("T")[0],
-      };
-      setClients((prev) => [...prev, newClient]);
-      toast.success("Client created");
+      createClient.mutate(form);
     }
     setDialogOpen(false);
     setEditing(null);
@@ -51,8 +50,7 @@ export default function Clients() {
   };
 
   const handleDelete = (id: string) => {
-    setClients((prev) => prev.filter((c) => c.id !== id));
-    toast.success("Client deleted");
+    deleteClient.mutate(id);
   };
 
   return (
@@ -86,34 +84,40 @@ export default function Clients() {
         <Input placeholder="Search clients..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((client, i) => (
-          <motion.div key={client.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <Card className="bg-card border-border hover:border-primary/30 transition-colors">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{client.name}</h3>
-                    <p className="text-xs text-muted-foreground">{client.industry}</p>
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1,2,3].map(i => <Skeleton key={i} className="h-40 rounded-lg" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((client, i) => (
+            <motion.div key={client.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <Card className="bg-card border-border hover:border-primary/30 transition-colors">
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-foreground">{client.name}</h3>
+                      <p className="text-xs text-muted-foreground">{client.industry}</p>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(client)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(client.id)} className="text-destructive"><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(client)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDelete(client.id)} className="text-destructive"><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{client.description}</p>
-                <div className="flex gap-4 text-xs text-muted-foreground">
-                  <span><strong className="text-foreground">{client.connectedApis}</strong> APIs</span>
-                  <span><strong className="text-foreground">{client.automations}</strong> Automations</span>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{client.description}</p>
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    <span><strong className="text-foreground">{client.connected_apis}</strong> APIs</span>
+                    <span><strong className="text-foreground">{client.automations}</strong> Automations</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
