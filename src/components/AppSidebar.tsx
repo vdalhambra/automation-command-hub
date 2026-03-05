@@ -5,6 +5,7 @@ import {
   Plug,
   ScrollText,
   MessageSquare,
+  CalendarDays,
   Settings,
   Command,
   LogOut,
@@ -32,6 +33,7 @@ const mainNav = [
   { title: "API Connections", url: "/connections", icon: Plug },
   { title: "Activity Logs", url: "/logs", icon: ScrollText },
   { title: "AI Command Center", url: "/ai-command", icon: MessageSquare },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays },
 ];
 
 const bottomNav = [

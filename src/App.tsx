@@ -12,6 +12,7 @@ import Automations from "@/pages/Automations";
 import ApiConnections from "@/pages/ApiConnections";
 import ActivityLogs from "@/pages/ActivityLogs";
 import AiCommand from "@/pages/AiCommand";
+import Calendar from "@/pages/Calendar";
 import SettingsPage from "@/pages/SettingsPage";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="/connections" element={<ApiConnections />} />
               <Route path="/logs" element={<ActivityLogs />} />
               <Route path="/ai-command" element={<AiCommand />} />
+              <Route path="/calendar" element={<Calendar />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiConnections, useCreateApiConnection, useToggleApiConnection } from "@/hooks/useApiConnections";
+import { useGoogleOAuthRedirect, useGoogleOAuthCallback } from "@/hooks/useGoogleOAuth";
 import { motion } from "framer-motion";
 
 const serviceOptions = ["Google Calendar", "Meta Ads", "Retell AI", "Slack Webhook", "Custom API"];
@@ -24,6 +25,8 @@ export default function ApiConnections() {
   const { data: connections = [], isLoading } = useApiConnections();
   const createConnection = useCreateApiConnection();
   const toggleConnection = useToggleApiConnection();
+  const startGoogleOAuth = useGoogleOAuthRedirect();
+  useGoogleOAuthCallback();
 
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -69,12 +72,22 @@ export default function ApiConnections() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>API Key</Label><Input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="Enter API key" /></div>
+              {form.service === "Google Calendar" ? (
+                <Button className="w-full" onClick={() => { setDialogOpen(false); startGoogleOAuth(); }}>
+                  📅 Connect with Google
+                </Button>
+              ) : (
+                <>
+                  <div><Label>API Key</Label><Input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="Enter API key" /></div>
+                </>
+              )}
             </div>
-            <DialogFooter>
-              <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-              <Button onClick={handleConnect}>Connect</Button>
-            </DialogFooter>
+            {form.service !== "Google Calendar" && (
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button onClick={handleConnect}>Connect</Button>
+              </DialogFooter>
+            )}
           </DialogContent>
         </Dialog>
       </div>
