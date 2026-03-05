@@ -3,8 +3,17 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import Dashboard from "@/pages/Dashboard";
+import Clients from "@/pages/Clients";
+import Automations from "@/pages/Automations";
+import ApiConnections from "@/pages/ApiConnections";
+import ActivityLogs from "@/pages/ActivityLogs";
+import AiCommand from "@/pages/AiCommand";
+import SettingsPage from "@/pages/SettingsPage";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -15,8 +24,17 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route element={<DashboardLayout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/clients" element={<Clients />} />
+            <Route path="/automations" element={<Automations />} />
+            <Route path="/connections" element={<ApiConnections />} />
+            <Route path="/logs" element={<ActivityLogs />} />
+            <Route path="/ai-command" element={<AiCommand />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
