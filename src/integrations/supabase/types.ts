@@ -14,7 +14,149 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activity_logs: {
+        Row: {
+          client_name: string | null
+          created_at: string | null
+          event: string | null
+          id: string
+          status: string | null
+          type: string | null
+          user_id: string
+        }
+        Insert: {
+          client_name?: string | null
+          created_at?: string | null
+          event?: string | null
+          id?: string
+          status?: string | null
+          type?: string | null
+          user_id: string
+        }
+        Update: {
+          client_name?: string | null
+          created_at?: string | null
+          event?: string | null
+          id?: string
+          status?: string | null
+          type?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      api_connections: {
+        Row: {
+          api_key_encrypted: string | null
+          created_at: string | null
+          icon: string | null
+          id: string
+          last_sync: string | null
+          service: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key_encrypted?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          last_sync?: string | null
+          service: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key_encrypted?: string | null
+          created_at?: string | null
+          icon?: string | null
+          id?: string
+          last_sync?: string | null
+          service?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      automations: {
+        Row: {
+          client_id: string | null
+          client_name: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          last_run: string | null
+          name: string
+          status: string | null
+          trigger_type: string | null
+          user_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          client_name?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          last_run?: string | null
+          name: string
+          status?: string | null
+          trigger_type?: string | null
+          user_id: string
+        }
+        Update: {
+          client_id?: string | null
+          client_name?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          last_run?: string | null
+          name?: string
+          status?: string | null
+          trigger_type?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          automations: number | null
+          connected_apis: number | null
+          created_at: string | null
+          description: string | null
+          id: string
+          industry: string | null
+          name: string
+          user_id: string
+        }
+        Insert: {
+          automations?: number | null
+          connected_apis?: number | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          industry?: string | null
+          name: string
+          user_id: string
+        }
+        Update: {
+          automations?: number | null
+          connected_apis?: number | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          industry?: string | null
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
