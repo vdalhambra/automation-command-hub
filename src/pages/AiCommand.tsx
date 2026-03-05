@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import ReactMarkdown from "react-markdown";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
@@ -14,15 +15,13 @@ interface Message {
 }
 
 const exampleCommands = [
-  "Create a new automation for lead follow-up",
-  "Connect Google Calendar API",
-  "Show active automations for Acme Corp",
-  "Generate a weekly report workflow",
+  "List my active automations",
+  "Which clients have no automations?",
+  "Add a new client called [name]",
+  "Show recent errors in activity logs",
 ];
 
-const mockResponses: Record<string, string> = {
-  default: "I understand your request. This feature will be fully operational once the AI agent backend is connected. For now, I can help you navigate the platform — try asking about clients, automations, or API connections.",
-};
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-command`;
 
 export default function AiCommand() {
   const [messages, setMessages] = useState<Message[]>([
@@ -43,23 +42,119 @@ export default function AiCommand() {
     }
   }, [messages]);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
+  const sendMessage = async () => {
+    if (!input.trim() || isTyping) return;
     const userMsg: Message = { id: Date.now().toString(), role: "user", content: input, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setIsTyping(true);
 
-    setTimeout(() => {
-      const response: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: mockResponses.default,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, response]);
+    // Build history for the API (exclude welcome message internals, just content)
+    const apiMessages = [...messages, userMsg]
+      .filter((m) => m.id !== "welcome" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    let assistantContent = "";
+    const assistantId = (Date.now() + 1).toString();
+
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ messages: apiMessages }),
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || `Request failed (${resp.status})`);
+      }
+
+      if (!resp.body) throw new Error("No response stream");
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let streamDone = false;
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") { streamDone = true; break; }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              assistantContent += content;
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant" && last.id === assistantId) {
+                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
+                }
+                return [...prev, { id: assistantId, role: "assistant", content: assistantContent, timestamp: new Date() }];
+              });
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split("\n")) {
+          if (!raw) continue;
+          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+          if (raw.startsWith(":") || raw.trim() === "") continue;
+          if (!raw.startsWith("data: ")) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              assistantContent += content;
+              setMessages((prev) =>
+                prev.map((m, i) => i === prev.length - 1 && m.id === assistantId ? { ...m, content: assistantContent } : m)
+              );
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // If no content was streamed, add a fallback
+      if (!assistantContent) {
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantId, role: "assistant", content: "I wasn't able to generate a response. Please try again.", timestamp: new Date() },
+        ]);
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Something went wrong";
+      toast.error(errorMsg);
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: "assistant", content: `⚠️ ${errorMsg}`, timestamp: new Date() },
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   return (
@@ -86,7 +181,13 @@ export default function AiCommand() {
               <div className={`max-w-[70%] rounded-lg px-4 py-2.5 text-sm ${
                 msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
               }`}>
-                {msg.content}
+                {msg.role === "assistant" ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  msg.content
+                )}
               </div>
               {msg.role === "user" && (
                 <div className="h-7 w-7 rounded-md bg-accent flex items-center justify-center shrink-0 mt-0.5">
@@ -95,7 +196,7 @@ export default function AiCommand() {
               )}
             </motion.div>
           ))}
-          {isTyping && (
+          {isTyping && !messages.some((m) => m.role === "assistant" && m.content === "") && (
             <div className="flex gap-3">
               <div className="h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
                 <Bot className="h-4 w-4 text-primary" />
@@ -120,8 +221,8 @@ export default function AiCommand() {
             ))}
           </div>
           <form onSubmit={(e) => { e.preventDefault(); sendMessage(); }} className="flex gap-2">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a command..." className="flex-1" />
-            <Button type="submit" size="icon" disabled={!input.trim()}><Send className="h-4 w-4" /></Button>
+            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a command..." className="flex-1" disabled={isTyping} />
+            <Button type="submit" size="icon" disabled={!input.trim() || isTyping}><Send className="h-4 w-4" /></Button>
           </form>
         </div>
       </Card>
