@@ -17,6 +17,11 @@ serve(async (req) => {
     const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID");
     const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
 
+    console.log("GOOGLE_CLIENT_ID present:", !!GOOGLE_CLIENT_ID);
+    console.log("GOOGLE_CLIENT_SECRET present:", !!GOOGLE_CLIENT_SECRET);
+    console.log("SUPABASE_URL present:", !!Deno.env.get("SUPABASE_URL"));
+    console.log("SUPABASE_SERVICE_ROLE_KEY present:", !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
       throw new Error("Google OAuth credentials not configured");
     }
