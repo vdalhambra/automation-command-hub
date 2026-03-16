@@ -18,11 +18,27 @@ export default function Login() {
     e.preventDefault();
     if (!email || !password) { toast.error("Please fill in all fields"); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { toast.error(error.message); setLoading(false); return; }
+
+    // Get user role
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
     setLoading(false);
-    if (error) { toast.error(error.message); return; }
     toast.success("Welcome back!");
-    navigate("/");
+
+    if (profile?.role === "client") {
+      navigate("/client-dashboard");
+    } else if (profile?.role === "agency") {
+      navigate("/");
+    } else {
+      navigate("/role-selection");
+    }
   };
 
   return (

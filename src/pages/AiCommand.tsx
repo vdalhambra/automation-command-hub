@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Bot, User } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -49,12 +50,9 @@ export default function AiCommand() {
     setInput("");
     setIsTyping(true);
 
-    // Build history for the API (exclude welcome message internals, just content)
     const apiMessages = [...messages, userMsg]
-      .filter((m) => m.id !== "welcome" || m.role === "assistant")
       .map((m) => ({ role: m.role, content: m.content }));
 
-    let assistantContent = "";
     const assistantId = (Date.now() + 1).toString();
 
     try {
@@ -62,7 +60,7 @@ export default function AiCommand() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+         Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
         },
         body: JSON.stringify({ messages: apiMessages }),
       });
@@ -72,79 +70,15 @@ export default function AiCommand() {
         throw new Error(errData.error || `Request failed (${resp.status})`);
       }
 
-      if (!resp.body) throw new Error("No response stream");
+      const data = await resp.json();
+      const content = data.content;
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
-      let streamDone = false;
+      if (!content) throw new Error("No content in response");
 
-      while (!streamDone) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") { streamDone = true; break; }
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === "assistant" && last.id === assistantId) {
-                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantContent } : m);
-                }
-                return [...prev, { id: assistantId, role: "assistant", content: assistantContent, timestamp: new Date() }];
-              });
-            }
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
-      }
-
-      // Final flush
-      if (textBuffer.trim()) {
-        for (let raw of textBuffer.split("\n")) {
-          if (!raw) continue;
-          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
-          if (raw.startsWith(":") || raw.trim() === "") continue;
-          if (!raw.startsWith("data: ")) continue;
-          const jsonStr = raw.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setMessages((prev) =>
-                prev.map((m, i) => i === prev.length - 1 && m.id === assistantId ? { ...m, content: assistantContent } : m)
-              );
-            }
-          } catch { /* ignore */ }
-        }
-      }
-
-      // If no content was streamed, add a fallback
-      if (!assistantContent) {
-        setMessages((prev) => [
-          ...prev,
-          { id: assistantId, role: "assistant", content: "I wasn't able to generate a response. Please try again.", timestamp: new Date() },
-        ]);
-      }
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: "assistant", content, timestamp: new Date() },
+      ]);
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Something went wrong";
       toast.error(errorMsg);
@@ -196,7 +130,7 @@ export default function AiCommand() {
               )}
             </motion.div>
           ))}
-          {isTyping && !messages.some((m) => m.role === "assistant" && m.content === "") && (
+          {isTyping && (
             <div className="flex gap-3">
               <div className="h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
                 <Bot className="h-4 w-4 text-primary" />

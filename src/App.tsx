@@ -14,6 +14,10 @@ import ActivityLogs from "@/pages/ActivityLogs";
 import AiCommand from "@/pages/AiCommand";
 import Calendar from "@/pages/Calendar";
 import SettingsPage from "@/pages/SettingsPage";
+import ClientDetail from "@/pages/ClientDetail";
+import RoleSelection from "@/pages/RoleSelection";
+import ClientOnboarding from "@/pages/ClientOnboarding";
+import ClientDashboard from "@/pages/ClientDashboard";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import NotFound from "@/pages/NotFound";
@@ -33,6 +37,7 @@ const App = () => (
             <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clients" element={<Clients />} />
+              <Route path="/clients/:clientId" element={<ClientDetail />} />
               <Route path="/automations" element={<Automations />} />
               <Route path="/connections" element={<ApiConnections />} />
               <Route path="/logs" element={<ActivityLogs />} />
@@ -40,6 +45,9 @@ const App = () => (
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
+            <Route path="/role-selection" element={<ProtectedRoute><RoleSelection /></ProtectedRoute>} />
+            <Route path="/onboarding" element={<ProtectedRoute><ClientOnboarding /></ProtectedRoute>} />
+            <Route path="/client-dashboard" element={<ProtectedRoute><ClientDashboard /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
