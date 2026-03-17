@@ -10,47 +10,24 @@ const tools = [
   {
     type: "function",
     function: {
+      name: "get_business_summary",
+      description: "Get a summary of the agency's clients, automations and connections",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_client",
       description: "Create a new client",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Client name" },
-          industry: { type: "string", description: "Client industry" },
-          description: { type: "string", description: "Brief description" },
-        },
-        required: ["name"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "edit_client",
-      description: "Edit an existing client",
-      parameters: {
-        type: "object",
-        properties: {
-          client_id: { type: "string", description: "The client ID" },
           name: { type: "string" },
           industry: { type: "string" },
           description: { type: "string" },
         },
-        required: ["client_id"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "delete_client",
-      description: "Delete a client by ID",
-      parameters: {
-        type: "object",
-        properties: {
-          client_id: { type: "string", description: "The client ID to delete" },
-        },
-        required: ["client_id"],
+        required: ["name"],
       },
     },
   },
@@ -58,15 +35,22 @@ const tools = [
     type: "function",
     function: {
       name: "create_automation",
-      description: "Create a new automation (not assigned to any client)",
+      description: "Create a real automation workflow for a client with a specific action. Use this when the user wants to set up a workflow.",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string" },
+          client_id: { type: "string", description: "The client ID to create the automation for" },
+          client_name: { type: "string" },
+          name: { type: "string", description: "Name of the automation" },
           description: { type: "string" },
-          trigger_type: { type: "string", enum: ["Webhook", "Schedule", "Event", "Manual"] },
+          trigger_type: { type: "string", enum: ["Webhook", "Manual", "Schedule"] },
+          action_type: { type: "string", enum: ["retell", "webhook", "email"], description: "The action to execute when triggered" },
+          action_config: {
+            type: "object",
+            description: "Configuration for the action. For retell: {api_key, agent_id, from_number}. For webhook: {url}. For email: {to_email, subject, body, api_key}",
+          },
         },
-        required: ["name"],
+        required: ["client_id", "name", "action_type"],
       },
     },
   },
@@ -88,25 +72,42 @@ const tools = [
   {
     type: "function",
     function: {
-      name: "get_business_summary",
-      description: "Get a full summary of the business: clients, automations, connections and recent logs",
-      parameters: { type: "object", properties: {} },
+      name: "get_client_automations",
+      description: "Get all automations for a specific client",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string" },
+        },
+        required: ["client_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_client",
+      description: "Delete a client",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string" },
+        },
+        required: ["client_id"],
+      },
     },
   },
 ];
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages } = await req.json();
+    const { messages, user_context } = await req.json();
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
 
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const token = authHeader.replace("Bearer ", "");
+    const token = req.headers.get("Authorization")?.replace("Bearer ", "") ?? "";
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -116,23 +117,38 @@ serve(async (req) => {
     const user = userRes.data.user;
     if (!user) throw new Error("Unauthorized");
 
-    const clientsRes = await supabase.from("clients").select("id, name, industry, description").eq("user_id", user.id);
-    const automationsRes = await supabase.from("automations").select("id, name, status, trigger_type, client_name").eq("user_id", user.id);
-    const connectionsRes = await supabase.from("api_connections").select("service, status").eq("user_id", user.id);
-    const logsRes = await supabase.from("activity_logs").select("event, status, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(5);
-
+    // Build context
+    const clientsRes = await supabase.from("clients").select("id, name, industry").eq("user_id", user.id);
+    const automationsRes = await supabase.from("automations").select("id, name, status, action_type, client_id, client_name").eq("user_id", user.id);
     const clients = clientsRes.data ?? [];
     const automations = automationsRes.data ?? [];
-    const connections = connectionsRes.data ?? [];
-    const logs = logsRes.data ?? [];
 
-    const contextBlock = "Current account data:\n" +
-      "Clients (" + clients.length + "): " + (clients.map((c: any) => c.name + " [id:" + c.id + "] (" + c.industry + ")").join(", ") || "none") + "\n" +
-      "Automations (" + automations.length + "): " + (automations.map((a: any) => a.name + " [id:" + a.id + "] [" + a.status + "] [client:" + (a.client_name || "unassigned") + "]").join(", ") || "none") + "\n" +
-      "API Connections: " + (connections.map((c: any) => c.service + " [" + c.status + "]").join(", ") || "none") + "\n" +
-      "Recent logs: " + (logs.map((l: any) => l.event + " [" + l.status + "]").join(", ") || "none");
+    const contextBlock = "Agency clients (" + clients.length + "): " +
+      clients.map((c: any) => c.name + " [id:" + c.id + "] (" + c.industry + ")").join(", ") + "\n" +
+      "Automations (" + automations.length + "): " +
+      automations.map((a: any) => a.name + " [id:" + a.id + "] [" + a.status + "] [action:" + (a.action_type || "none") + "] for " + a.client_name).join(", ");
 
-    const systemPrompt = "You are an AI operations manager for a business automation platform. You manage the user's own account: clients, automations, API connections and business metrics. You have access to tools to execute real actions. Always use the tools when the user asks you to create, edit, delete or modify anything. Never say you did something without calling the tool first. Be concise.\n\n" + contextBlock;
+    const systemPrompt = `You are an AI Command Center for a marketing agency. You help create and manage real automation workflows for clients.
+
+CURRENT AGENCY DATA:
+${contextBlock}
+
+CAPABILITIES:
+- Create real automation workflows that execute actions (Retell AI calls, webhooks, emails)
+- Each automation gets a unique webhook URL that external services (Meta Ads, forms) can call to trigger it
+- When creating a Retell automation: ask for API key, Agent ID, and from number if not provided
+- When creating a webhook automation: ask for the target URL
+- When creating an email automation: ask for recipient, subject, and body
+- Always be proactive: if the user wants a workflow, guide them through configuration step by step
+- After creating an automation, tell the user the webhook URL so they can configure it in Meta Ads or their form
+
+IMPORTANT GUIDELINES:
+- When you need information to create an automation, ask for it conversationally one step at a time
+- If the user doesn't have a Retell account, tell them: "Puedes crear una cuenta gratis en https://retellai.com. Una vez dentro: 1) Ve a API Keys y copia tu key, 2) Crea un agente y copia el Agent ID, 3) Ve a Phone Numbers y compra o verifica un número"
+- If the user doesn't have the info yet, give them exact steps with URLs
+- Once you have ALL required info, create the automation immediately without asking again
+- After creating, always tell the user the webhook URL and explain how to use it in Meta Ads: go to Meta Ads Manager → Lead Ads → Instant Form → CRM Integration → paste the webhook URL
+- Always respond in the same language the user is writing in`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -143,14 +159,14 @@ serve(async (req) => {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [{ role: "system", content: systemPrompt }, ...messages],
-        tools: tools,
+        tools,
         tool_choice: "auto",
       }),
     });
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error?.message || "OpenAI API error");
+      throw new Error(err.error?.message || "OpenAI error");
     }
 
     const data = await response.json();
@@ -162,27 +178,55 @@ serve(async (req) => {
       const args = JSON.parse(toolCall.function.arguments);
       let result = "";
 
-      if (fnName === "create_client") {
-        const { error } = await supabase.from("clients").insert({ user_id: user.id, name: args.name, industry: args.industry || "", description: args.description || "" });
+      if (fnName === "get_business_summary") {
+        result = contextBlock;
+
+      } else if (fnName === "create_client") {
+        const { error } = await supabase.from("clients").insert({
+          user_id: user.id,
+          name: args.name,
+          industry: args.industry || "",
+          description: args.description || "",
+          connected_apis: 0,
+          automations: 0,
+        });
         result = error ? "Error: " + error.message : "Client '" + args.name + "' created successfully.";
-      } else if (fnName === "edit_client") {
-        const updates: any = {};
-        if (args.name) updates.name = args.name;
-        if (args.industry) updates.industry = args.industry;
-        if (args.description) updates.description = args.description;
-        const { error } = await supabase.from("clients").update(updates).eq("id", args.client_id).eq("user_id", user.id);
-        result = error ? "Error: " + error.message : "Client updated successfully.";
-      } else if (fnName === "delete_client") {
-        const { error } = await supabase.from("clients").delete().eq("id", args.client_id).eq("user_id", user.id);
-        result = error ? "Error: " + error.message : "Client deleted successfully.";
+
       } else if (fnName === "create_automation") {
-        const { error } = await supabase.from("automations").insert({ user_id: user.id, name: args.name, description: args.description || "", trigger_type: args.trigger_type || "Manual", status: "inactive", client_name: "" });
-        result = error ? "Error: " + error.message : "Automation '" + args.name + "' created successfully.";
+        const { data: newAuto, error } = await supabase.from("automations").insert({
+          user_id: user.id,
+          client_id: args.client_id,
+          client_name: args.client_name || "",
+          name: args.name,
+          description: args.description || "",
+          trigger_type: args.trigger_type || "Webhook",
+          action_type: args.action_type,
+          action_config: args.action_config || {},
+          status: "inactive",
+        }).select().single();
+
+        if (error) {
+          result = "Error: " + error.message;
+        } else {
+          const webhookUrl = Deno.env.get("SUPABASE_URL") + "/functions/v1/automation-webhook?id=" + newAuto.id;
+          await supabase.from("automations").update({ webhook_url: webhookUrl }).eq("id", newAuto.id);
+          result = "Automation '" + args.name + "' created successfully.\n" +
+            "Action: " + args.action_type + "\n" +
+            "Webhook URL: " + webhookUrl + "\n" +
+            "Status: inactive (activate it when ready)";
+        }
+
       } else if (fnName === "toggle_automation") {
         const { error } = await supabase.from("automations").update({ status: args.status }).eq("id", args.automation_id).eq("user_id", user.id);
         result = error ? "Error: " + error.message : "Automation set to " + args.status + ".";
-      } else if (fnName === "get_business_summary") {
-        result = contextBlock;
+
+      } else if (fnName === "get_client_automations") {
+        const { data: autos } = await supabase.from("automations").select("*").eq("client_id", args.client_id);
+        result = JSON.stringify(autos ?? []);
+
+      } else if (fnName === "delete_client") {
+        const { error } = await supabase.from("clients").delete().eq("id", args.client_id).eq("user_id", user.id);
+        result = error ? "Error: " + error.message : "Client deleted.";
       }
 
       const followUp = await fetch("https://api.openai.com/v1/chat/completions", {

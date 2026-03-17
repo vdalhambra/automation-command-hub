@@ -92,7 +92,7 @@ useEffect(() => {
   const [autoOpen, setAutoOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", industry: "", description: "", notes: "", contact_name: "", contact_email: "" });
   const [connForm, setConnForm] = useState({ service: "", apiKey: "" });
-  const [autoForm, setAutoForm] = useState({ name: "", description: "", triggerType: "Webhook" });
+  const [autoForm, setAutoForm] = useState({ name: "", description: "", triggerType: "Webhook", actionType: "", actionConfig: {} as any });
   const [notes, setNotes] = useState("");
   const [messages, setMessages] = useState<Message[]>([{ id: "welcome", role: "assistant", content: `Hi! I'm your AI assistant for this client. Ask me anything about their automations, connections, or how to optimize their workflows.` }]);
   const [chatInput, setChatInput] = useState("");
@@ -138,9 +138,9 @@ useEffect(() => {
     setConnForm({ service: "", apiKey: "" });
   };
 
-  const handleAddAutomation = async () => {
+const handleAddAutomation = async () => {
     if (!autoForm.name.trim()) { toast.error("Name is required"); return; }
-    const { error } = await supabase.from("automations").insert({
+    const { data: newAuto, error } = await supabase.from("automations").insert({
       user_id: user!.id,
       client_id: clientId!,
       client_name: client?.name ?? "",
@@ -148,7 +148,13 @@ useEffect(() => {
       description: autoForm.description,
       trigger_type: autoForm.triggerType,
       status: "inactive",
-    });
+      action_type: autoForm.actionType || null,
+      action_config: autoForm.actionConfig || null,
+    }).select().single();
+    if (error) { toast.error(error.message); return; }
+    // Generate webhook URL
+    const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/automation-webhook?id=${newAuto.id}`;
+    await supabase.from("automations").update({ webhook_url: webhookUrl }).eq("id", newAuto.id);
     if (error) { toast.error(error.message); return; }
     toast.success("Automation created");
     setAutoOpen(false);
@@ -278,23 +284,51 @@ setMessages((prev) => [...prev, assistantMsg]);
             <CardTitle className="text-base">Automations</CardTitle>
             <Dialog open={autoOpen} onOpenChange={setAutoOpen}>
               <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4 mr-1" />New</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>New Automation</DialogTitle></DialogHeader>
-                <div className="space-y-3 py-2">
-                  <div><Label>Name</Label><Input value={autoForm.name} onChange={(e) => setAutoForm({ ...autoForm, name: e.target.value })} placeholder="Automation name" /></div>
-                  <div><Label>Description</Label><Textarea value={autoForm.description} onChange={(e) => setAutoForm({ ...autoForm, description: e.target.value })} placeholder="What does it do?" /></div>
-                  <div><Label>Trigger</Label>
-                    <Select value={autoForm.triggerType} onValueChange={(v) => setAutoForm({ ...autoForm, triggerType: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Webhook">Webhook</SelectItem>
-                        <SelectItem value="Schedule">Schedule</SelectItem>
-                        <SelectItem value="Event">Event</SelectItem>
-                        <SelectItem value="Manual">Manual</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+       <DialogContent>
+  <DialogHeader><DialogTitle>New Automation</DialogTitle></DialogHeader>
+  <div className="space-y-3 py-2">
+    <div><Label>Name</Label><Input value={autoForm.name} onChange={(e) => setAutoForm({ ...autoForm, name: e.target.value })} placeholder="Automation name" /></div>
+    <div><Label>Description</Label><Textarea value={autoForm.description} onChange={(e) => setAutoForm({ ...autoForm, description: e.target.value })} placeholder="What does it do?" /></div>
+    <div><Label>Trigger</Label>
+      <Select value={autoForm.triggerType} onValueChange={(v) => setAutoForm({ ...autoForm, triggerType: v })}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="Webhook">Webhook (receive external trigger)</SelectItem>
+          <SelectItem value="Manual">Manual</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    <div><Label>Action</Label>
+      <Select value={autoForm.actionType} onValueChange={(v) => setAutoForm({ ...autoForm, actionType: v, actionConfig: {} })}>
+        <SelectTrigger><SelectValue placeholder="Select action" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="retell">📞 Retell AI — Make a phone call</SelectItem>
+          <SelectItem value="webhook">🔗 Forward to webhook</SelectItem>
+          <SelectItem value="email">📧 Send email</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    {autoForm.actionType === "retell" && (
+      <div className="space-y-2 p-3 rounded-lg bg-muted">
+        <div><Label>Retell API Key</Label><Input type="password" placeholder="key_..." onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, api_key: e.target.value } })} /></div>
+        <div><Label>Agent ID</Label><Input placeholder="agent_..." onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, agent_id: e.target.value } })} /></div>
+        <div><Label>From Number</Label><Input placeholder="+34600000000" onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, from_number: e.target.value } })} /></div>
+        <p className="text-xs text-muted-foreground">The lead's phone will come from the webhook payload (field: phone)</p>
+      </div>
+    )}
+    {autoForm.actionType === "webhook" && (
+      <div className="p-3 rounded-lg bg-muted">
+        <Label>Target URL</Label><Input placeholder="https://..." onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { url: e.target.value } })} />
+      </div>
+    )}
+    {autoForm.actionType === "email" && (
+      <div className="space-y-2 p-3 rounded-lg bg-muted">
+        <div><Label>To Email</Label><Input placeholder="client@email.com" onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, to_email: e.target.value } })} /></div>
+        <div><Label>Subject</Label><Input placeholder="New lead received" onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, subject: e.target.value } })} /></div>
+        <div><Label>Body</Label><Textarea placeholder="Email content..." onChange={(e) => setAutoForm({ ...autoForm, actionConfig: { ...autoForm.actionConfig, body: e.target.value } })} /></div>
+      </div>
+    )}
+  </div>
                 <DialogFooter>
                   <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
                   <Button onClick={handleAddAutomation}>Create</Button>
