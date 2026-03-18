@@ -31,15 +31,16 @@ export function useCreateApiConnection() {
   const qc = useQueryClient();
   const { user } = useAuth();
   return useMutation({
-    mutationFn: async (input: { service: string; api_key_encrypted?: string; icon?: string }) => {
-      const { data, error } = await supabase.from("api_connections").insert({
-        service: input.service,
-        api_key_encrypted: input.api_key_encrypted || null,
-        icon: input.icon || "🔗",
-        status: "connected",
-        last_sync: new Date().toISOString(),
-        user_id: user!.id,
-      }).select().single();
+   mutationFn: async (input: { service: string; api_key_encrypted?: string; api_key_plain?: string; icon?: string }) => {
+  const { data, error } = await supabase.from("api_connections").insert({
+    service: input.service,
+    api_key_encrypted: input.api_key_encrypted || null,
+    api_key_plain: input.api_key_plain || null,
+    icon: input.icon || "🔗",
+    status: "connected",
+    last_sync: new Date().toISOString(),
+    user_id: user!.id,
+  }).select().single();
       if (error) throw error;
       return data;
     },
@@ -61,5 +62,19 @@ export function useToggleApiConnection() {
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["api_connections"] }); },
     onError: (e) => toast.error(e.message),
+  });
+}
+export function useDeleteApiConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("api_connections").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["api_connections"] });
+      toast.success("Connection deleted");
+    },
+    onError: (e: any) => toast.error(e.message),
   });
 }

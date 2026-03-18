@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useApiConnections, useCreateApiConnection, useToggleApiConnection } from "@/hooks/useApiConnections";
+import { useApiConnections, useCreateApiConnection, useToggleApiConnection, useDeleteApiConnection } from "@/hooks/useApiConnections";
 import { useGoogleOAuthRedirect, useGoogleOAuthCallback } from "@/hooks/useGoogleOAuth";
 import { motion } from "framer-motion";
 
@@ -25,6 +25,7 @@ export default function ApiConnections() {
   const { data: connections = [], isLoading } = useApiConnections();
   const createConnection = useCreateApiConnection();
   const toggleConnection = useToggleApiConnection();
+  const deleteConnection = useDeleteApiConnection();
   const startGoogleOAuth = useGoogleOAuthRedirect();
   useGoogleOAuthCallback();
 
@@ -43,6 +44,7 @@ export default function ApiConnections() {
     createConnection.mutate({
       service: form.service,
       api_key_encrypted: form.apiKey || undefined,
+      api_key_plain: form.apiKey || undefined,
       icon: serviceIcons[form.service] || "🔗",
     });
     setDialogOpen(false);
@@ -77,9 +79,20 @@ export default function ApiConnections() {
                   📅 Connect with Google
                 </Button>
               ) : (
-                <>
-                  <div><Label>API Key</Label><Input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="Enter API key" /></div>
-                </>
+                <div>
+                  <Label>API Key</Label>
+                  <Input
+                    type="password"
+                    value={form.apiKey}
+                    onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                    placeholder={form.service === "Retell AI" ? "key_..." : "Enter API key"}
+                  />
+                  {form.service === "Retell AI" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Encuéntrala en retellai.com → API Keys
+                    </p>
+                  )}
+                </div>
               )}
             </div>
             {form.service !== "Google Calendar" && (
@@ -119,14 +132,16 @@ export default function ApiConnections() {
                     </div>
                     <StatusBadge status={conn.status === "connected" ? "success" : "error"} />
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => toggleConnection.mutate({ id: conn.id, status: conn.status })}
-                  >
-                    {conn.status === "connected" ? "Disconnect" : "Reconnect"}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1"
+                      onClick={() => toggleConnection.mutate({ id: conn.id, status: conn.status })}>
+                      {conn.status === "connected" ? "Disconnect" : "Reconnect"}
+                    </Button>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive"
+                      onClick={() => deleteConnection.mutate(conn.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
