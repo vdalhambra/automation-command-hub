@@ -29,9 +29,7 @@ const agencyClientTools = [
       description: "Add or update notes for this client",
       parameters: {
         type: "object",
-        properties: {
-          note: { type: "string" },
-        },
+        properties: { note: { type: "string" } },
         required: ["note"],
       },
     },
@@ -124,7 +122,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, client_id, user_token, user_context, is_independent_client } = await req.json();
+    const { messages, client_id, user_token, is_independent_client } = await req.json();
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
@@ -145,7 +143,6 @@ serve(async (req) => {
     let client: any = null;
 
     if (is_independent_client) {
-      // Independent client mode
       const automationsRes = await supabase.from("automations").select("id, name, status, trigger_type").eq("user_id", user.id);
       const connectionsRes = await supabase.from("api_connections").select("id, service, status").eq("user_id", user.id);
       const profileRes = await supabase.from("profiles").select("*").eq("id", user.id).single();
@@ -162,7 +159,6 @@ serve(async (req) => {
       tools = independentClientTools;
 
     } else {
-      // Agency client mode
       if (!client_id) throw new Error("client_id is required");
       const clientRes = await supabase.from("clients").select("*").eq("id", client_id).eq("user_id", user.id).single();
       if (!clientRes.data) throw new Error("Client not found or access denied");
